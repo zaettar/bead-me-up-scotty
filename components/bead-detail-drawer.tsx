@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { GateApproval } from "@/components/gate-approval";
+import { HumanResponse } from "@/components/human-response";
 import { AssigneeField } from "@/components/assignee-field";
 import { DependencyEditor } from "@/components/dependency-editor";
 import { toast } from "sonner";
@@ -44,6 +45,7 @@ import {
   childrenOf,
   epicProgress,
   isHumanGate,
+  needsHuman,
   relTime,
   fmtDate,
   fmtDateTime,
@@ -245,6 +247,8 @@ function DrawerBody({
   const [addingGate, setAddingGate] = React.useState(false);
   const [gateReason, setGateReason] = React.useState("");
   const gateBead = isHumanGate(bead);
+  const [humanDraft, setHumanDraft] = React.useState("");
+  const awaitingHuman = needsHuman(bead);
 
   // Closing is the only moment a reason can be recorded — bd offers no way to
   // attach one afterwards — so picking "Closed" opens a skippable composer
@@ -302,7 +306,9 @@ function DrawerBody({
 
   const unsaved =
     (editing && (titleDraft !== bead.title || descDraft !== (bead.description ?? ""))) ||
-    [draft, closeDraft, gateReason].some((text) => text.trim() !== "");
+    // A draft stops counting once its form is gone, e.g. the flag cleared from
+    // the CLI, or a stray click could never close the drawer again.
+    [draft, closeDraft, gateReason, awaitingHuman ? humanDraft : ""].some((text) => text.trim() !== "");
   React.useEffect(() => {
     dirtyRef.current = unsaved;
     return () => {
@@ -477,6 +483,19 @@ function DrawerBody({
               Human approval gate. Approving closes it and unblocks everything waiting on it.
             </span>
             <GateApproval id={bead.id} />
+          </div>
+        )}
+
+        {awaitingHuman && (
+          <div className="mb-4 rounded-[10px] border border-[var(--brand)]/40 bg-[var(--brand-weak)] p-[11px_13px]">
+            <div className="mb-2 flex items-start gap-3">
+              <Icon name="user" size={16} style={{ color: "var(--brand)" }} className="mt-[1px] flex-shrink-0" />
+              <span className="flex-1 text-[12.5px] leading-[1.45] text-[var(--text-2)]">
+                <span className="font-semibold text-[var(--text)]">Needs your input.</span>{" "}
+                Responding posts a comment and clears the request. Dismissing clears it without a reply.
+              </span>
+            </div>
+            <HumanResponse id={bead.id} text={humanDraft} onTextChange={setHumanDraft} />
           </div>
         )}
 
