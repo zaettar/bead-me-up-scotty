@@ -9,7 +9,7 @@ import { isSubmitKey } from "@/lib/keyboard-shortcuts";
 import { beadsKey, activityKey } from "@/hooks/use-beads";
 
 /** Shared by both human-gate surfaces; approval records an explicit decision. */
-export function GateApproval({ id }: { id: string }) {
+export function GateApproval({ id, disabled = false }: { id: string; disabled?: boolean }) {
   const { projectId, meta, readOnly } = useApp();
   const qc = useQueryClient();
   const [showNote, setShowNote] = React.useState(false);
@@ -30,7 +30,7 @@ export function GateApproval({ id }: { id: string }) {
     onSettled: () => { submitting.current = false; },
   });
   const approve = () => {
-    if (readOnly || submitting.current) return;
+    if (readOnly || disabled || submitting.current) return;
     submitting.current = true;
     const actor = meta?.humanActor?.trim() || "human reviewer";
     const decision = `Approved by ${actor} via Scotty at ${new Date().toISOString()}`;
@@ -41,7 +41,7 @@ export function GateApproval({ id }: { id: string }) {
       <div className="flex items-center gap-2">
         <button
           type="button"
-          disabled={readOnly || approval.isPending}
+          disabled={readOnly || disabled || approval.isPending}
           aria-expanded={showNote}
           aria-controls={noteId}
           onClick={() => setShowNote(!showNote)}
@@ -51,7 +51,7 @@ export function GateApproval({ id }: { id: string }) {
         </button>
         <button
           type="button"
-          disabled={readOnly || approval.isPending}
+          disabled={readOnly || disabled || approval.isPending}
           onClick={approve}
           className="flex h-8 flex-shrink-0 items-center gap-[6px] rounded-lg px-3 text-[12.5px] font-[550] text-white disabled:opacity-50"
           style={{ background: "var(--brand)" }}
