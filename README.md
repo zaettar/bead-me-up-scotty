@@ -81,8 +81,8 @@ npm, Docker) are below.
   expandable child lists; add a child straight into an epic.
 - **Dependencies & graph** — view/add/remove typed dependencies in the detail
   drawer, plus an interactive React Flow dependency graph (drag node→node to link).
-- **Roadmap** — beads in columns by dependency depth, with the critical path, next-up
-  order, and click-to-trace lineage. See [Roadmap](#roadmap-see-the-order-of-work).
+- **Roadmap** — beads in columns by dependency depth, with the critical path, a
+  Next up list, and click-to-trace lineage. See [Roadmap](#roadmap-see-the-order-of-work).
 - **Comments** — author-stamped comment threads with a composer on every bead.
 - **Bead links** — open a bead directly with `/p/<project>?bead=<id>`. The address
   bar follows the open drawer; its **Copy link** button copies a shareable link,
@@ -123,15 +123,15 @@ left, and `NO BLOCKERS` holds beads that never had a blocker. Only `blocks`,
 children to the right. Epics appear as nodes only when something depends on them
 or they depend on something.
 
-Completed work stays in place, greyed out and struck through, so you can see how
-far the project has come. Turn on **Hide completed** to remove it, which makes
+Completed work stays in place, muted with a green tint and struck through, so you
+can see how far the project has come. Turn on **Hide completed** to remove it, which makes
 depth count remaining steps only. The toggle is remembered per project in this
 browser.
 
 Ready beads are numbered `NEXT 1`, `NEXT 2`, and so on: critical path first, then
 priority, then how much they unblock. A red dot marks the longest remaining
 chain. Beads waiting on a person show **NEEDS YOU**. A dashed link is still
-waiting; a solid, muted one is met.
+waiting; a muted green one is met.
 
 Click a bead, or move with `J`/`K`/`H`/`L`, to trace what it needs and what it
 unblocks. The panel lists its direct links, how many open beads are downstream,
@@ -139,6 +139,16 @@ and any blockers hidden from the map, such as archived beads. Double-click, pres
 `Enter`, or use **Open bead** to open the drawer; click empty space to clear the
 trace. **Next up** and **Done** highlight without moving anything, **Scope**
 limits the map to one epic, and **+N unlinked** shows beads with no links.
+
+The **Next up** list beside the map shows what to do next, in the same order as
+the `NEXT n` badges, with how much each item unblocks. Beads waiting on a person
+sit above it as **NEEDS YOU**, including questions that are still blocked, because
+you can answer those now. Ready beads with no links are listed and numbered too,
+marked **Unlinked**. Select a row to trace it and scroll the map to it, which
+expands unlinked beads if needed. Double-click a row to open the drawer. Tab
+reaches the list; `J`/`K`/`H`/`L` stay on the map, and the list follows along. Use
+the arrow in its header to collapse it. On narrow screens it sits above the map
+and folds away while the detail panel is open.
 
 Roadmap only reads data. Edits happen in the detail drawer.
 

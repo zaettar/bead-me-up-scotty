@@ -1,8 +1,9 @@
 "use client";
 import * as React from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { Icon, typeIconName } from "@/components/icons";
 import { useApp } from "@/components/app-context";
-import { useHideCompleted } from "@/hooks/use-roadmap-prefs";
+import { useHideCompleted, useRailCollapsed } from "@/hooks/use-roadmap-prefs";
 import { catColor, statusLabel, typeColor } from "@/lib/beads-view";
 import {
   buildDepthMap,
@@ -18,9 +19,11 @@ import {
 type Highlight = "all" | "next" | "done";
 
 const CRITICAL = "#ef4444";
+const DONE_GREEN = catColor("closed");
 // Same meanings as every other view, so a colour never changes what it says.
 const STATE_COLOR: Record<MapState, string> = {
-  done: "var(--text-3)",
+  // Green for a successful close, held back so it reads as finished, not active.
+  done: `color-mix(in srgb, ${DONE_GREEN} 55%, var(--text-3))`,
   doing: catColor("in_progress"),
   ready: catColor("open"),
   blocked: "var(--text-3)",
@@ -37,7 +40,7 @@ const STATE_LABEL: Record<MapState, string> = {
 const readable = (color: string) => `color-mix(in srgb, ${color} 45%, var(--map-text))`;
 
 function nodeFill(state: MapState): string {
-  if (state === "done") return "var(--surface-2)";
+  if (state === "done") return `color-mix(in srgb, ${DONE_GREEN} 9%, var(--surface-2))`;
   if (state === "blocked") return "var(--surface)";
   return `color-mix(in srgb, ${STATE_COLOR[state]} 16%, var(--surface))`;
 }
@@ -116,7 +119,7 @@ const DepthNode = React.memo(function DepthNode({
         height: NODE_HEIGHT,
         transform: `translate(${x}px, ${y}px)`,
         background: nodeFill(state),
-        borderColor: selected ? "var(--brand)" : done ? "var(--border)" : state === "blocked" ? "var(--border-strong)" : STATE_COLOR[state],
+        borderColor: selected ? "var(--brand)" : done ? `color-mix(in srgb, ${DONE_GREEN} 28%, var(--border))` : state === "blocked" ? "var(--border-strong)" : STATE_COLOR[state],
         borderStyle: state === "blocked" || outsideEpic ? "dashed" : "solid",
         opacity: dim ? 0.22 : 1,
       }}
@@ -126,7 +129,7 @@ const DepthNode = React.memo(function DepthNode({
     >
       <span aria-hidden className="absolute inset-y-0 left-0 w-[4px]" style={{ background: color }} />
       <div className="flex min-w-0 items-center gap-[5px]">
-        <Icon name={typeIconName(issueType)} size={11} style={{ color: done ? "var(--text-3)" : typeColor(issueType) }} className="flex-shrink-0" />
+        <Icon name={typeIconName(issueType)} size={11} style={{ color: done ? STATE_COLOR.done : typeColor(issueType) }} className="flex-shrink-0" />
         <span data-contrast className="truncate font-mono text-[10.5px] text-[var(--map-text-2)]">{id}</span>
         {critical && <span aria-hidden className="text-[9px]" style={{ color: CRITICAL }}>●</span>}
         <span className="flex-1" />
@@ -134,7 +137,7 @@ const DepthNode = React.memo(function DepthNode({
           <span
             data-contrast
             className="flex-shrink-0 text-[9.5px] font-[650] tracking-[.03em]"
-            style={{ color: done ? "var(--map-text-2)" : readable(color) }}
+            style={{ color: readable(color) }}
           >
             {badge}
           </span>
@@ -171,7 +174,7 @@ function edgeStyle(edge: DepthMapEdge, hot: boolean, faded: boolean): React.SVGP
   const opacity = faded ? 0.1 : 1;
   if (hot) return { stroke: "var(--brand)", strokeWidth: 2 };
   if (edge.critical) return { stroke: CRITICAL, strokeWidth: 1.8, strokeDasharray: edge.met ? undefined : "4 4", opacity };
-  if (edge.met) return { stroke: "var(--text-3)", strokeWidth: 1.2, opacity: faded ? 0.1 : 0.45 };
+  if (edge.met) return { stroke: STATE_COLOR.done, strokeWidth: 1.2, opacity: faded ? 0.1 : 0.6 };
   return { stroke: "var(--border-strong)", strokeWidth: 1.4, strokeDasharray: "4 4", opacity };
 }
 
@@ -218,7 +221,7 @@ function Legend() {
     </span>
   );
   return (
-    <div className="hidden flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--text-2)] md:flex">
+    <div className="hidden flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--text-2)] lg:flex">
       {swatch("done", "✓ Done")}
       {swatch("doing", "In progress")}
       {swatch("ready", "Next up")}
@@ -226,7 +229,7 @@ function Legend() {
       <span className="inline-flex items-center gap-[5px]">
         <span aria-hidden style={{ color: CRITICAL }}>●</span> Critical path
       </span>
-      <span>Solid link: blocker done · dashed link: still waiting</span>
+      <span>Green link: blocker done · dashed link: still waiting</span>
     </div>
   );
 }
@@ -274,7 +277,7 @@ function DetailPanel({ node, needs, unblocks, onOpen, onClear }: {
   return (
     <aside
       aria-label="Selected bead"
-      className="max-h-[42%] flex-shrink-0 overflow-y-auto border-t border-border bg-[var(--surface)] p-4 md:max-h-none md:w-[300px] md:border-l md:border-t-0"
+      className="order-3 max-h-[42%] flex-shrink-0 overflow-y-auto border-t border-border bg-[var(--surface)] p-4 lg:order-none lg:max-h-[58%]"
     >
       <div className="font-mono text-[11px] text-[var(--text-2)]">{node.bead.id} · {STATE_LABEL[node.state]}</div>
       <h2 className="mb-3 mt-1 text-[14px] font-[650] leading-snug text-[var(--text)]">{node.bead.title}</h2>
@@ -314,6 +317,131 @@ function DetailPanel({ node, needs, unblocks, onOpen, onClear }: {
   );
 }
 
+function RailRow({ node, selected, collapsed, onSelect, onOpen }: {
+  node: DepthMapNode;
+  selected: boolean;
+  /** The bead is folded into `+N unlinked`, so selecting it expands them. */
+  collapsed: boolean;
+  onSelect: (id: string) => void;
+  onOpen: (id: string) => void;
+}) {
+  const row = React.useRef<HTMLButtonElement>(null);
+  // Follow J/K/H/L, without taking focus from the map.
+  React.useEffect(() => {
+    if (selected) row.current?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+  const color = node.needsYou ? "var(--brand)" : STATE_COLOR.ready;
+  const details = [
+    node.state === "blocked" ? "Blocked" : null,
+    node.unblocks ? `Unblocks ${node.unblocks}` : null,
+    collapsed ? "Unlinked" : null,
+  ].filter(Boolean).join(" · ");
+  return (
+    <li>
+      <button
+        ref={row}
+        type="button"
+        data-rail-id={node.bead.id}
+        aria-current={selected ? "true" : undefined}
+        onClick={() => onSelect(node.bead.id)}
+        onDoubleClick={() => onOpen(node.bead.id)}
+        className={`flex w-full flex-col gap-[1px] rounded-[7px] border px-[8px] py-[5px] text-left ${
+          selected ? "border-[var(--brand)] ring-1 ring-[var(--brand)]/40" : "border-transparent hover:bg-[var(--surface-2)]"
+        }`}
+      >
+        <span className="flex min-w-0 items-center gap-[5px]">
+          <span data-contrast className="flex-shrink-0 text-[9.5px] font-[650] tracking-[.03em]" style={{ color: readable(color) }}>
+            {node.needsYou ? "NEEDS YOU" : `NEXT ${node.rank}`}
+          </span>
+          {node.critical && <span aria-hidden className="text-[9px]" style={{ color: CRITICAL }}>●</span>}
+          <span className="flex-1" />
+          <span data-contrast className="truncate font-mono text-[10.5px] text-[var(--map-text-2)]">{node.bead.id}</span>
+        </span>
+        <span data-contrast className="line-clamp-2 text-[12px] font-[550] leading-[1.3] text-[var(--map-text)] [overflow-wrap:anywhere]">
+          {node.bead.title}
+        </span>
+        {details && <span data-contrast className="text-[10.5px] text-[var(--map-text-2)]">{details}</span>}
+      </button>
+    </li>
+  );
+}
+
+/**
+ * What to do next, in `NEXT n` order, with anything waiting on a person above it.
+ * Plain buttons on purpose: only map nodes carry `data-keyboard-bead-id`, so
+ * J/K/H/L never visit the same bead twice, and Tab and Enter work here natively.
+ */
+function NextUpRail({ needsYou, nextUp, hidden, selectedId, roomy, collapsed, onCollapse, onSelect, onOpen }: {
+  needsYou: DepthMapNode[];
+  nextUp: DepthMapNode[];
+  hidden: Set<string>;
+  selectedId: string | null;
+  /** False while the detail panel needs the room on a narrow screen. */
+  roomy: boolean;
+  collapsed: boolean;
+  onCollapse: (collapsed: boolean) => void;
+  onSelect: (id: string) => void;
+  onOpen: (id: string) => void;
+}) {
+  const count = needsYou.length + nextUp.length;
+  const rows = (list: DepthMapNode[]) => list.map((node) => (
+    <RailRow
+      key={node.bead.id}
+      node={node}
+      selected={node.bead.id === selectedId}
+      collapsed={hidden.has(node.bead.id)}
+      onSelect={onSelect}
+      onOpen={onOpen}
+    />
+  ));
+  return (
+    <section
+      aria-label="Next up list"
+      data-rail-collapsed={collapsed ? "true" : undefined}
+      className={`order-1 flex min-h-0 flex-shrink-0 flex-col border-b border-border bg-[var(--surface)] lg:order-none lg:border-b-0 ${
+        collapsed ? "" : "max-h-[26%] lg:max-h-none lg:flex-1"
+      }`}
+    >
+      <div className="flex h-8 flex-shrink-0 items-center gap-2 px-3">
+        <h2 className="text-[12px] font-[650] text-[var(--text)]">Next up</h2>
+        <span className="text-[11px] tabular-nums text-[var(--text-2)]">{count}</span>
+        <span className="flex-1" />
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Show the Next up list" : "Hide the Next up list"}
+          title={collapsed ? "Show the Next up list" : "Hide the Next up list"}
+          onClick={() => onCollapse(!collapsed)}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+        >
+          {collapsed ? <ChevronDown aria-hidden size={15} /> : <ChevronUp aria-hidden size={15} />}
+        </button>
+      </div>
+      {!collapsed && (
+        <div className={`min-h-0 flex-1 overflow-y-auto px-2 pb-2 ${roomy ? "" : "hidden lg:block"}`}>
+          {count === 0 ? (
+            <p className="px-1 py-2 text-[12px] text-[var(--text-2)]">
+              Nothing is ready right now. Everything open is in progress or waiting on something.
+            </p>
+          ) : (
+            <>
+              {needsYou.length > 0 && (
+                <ul
+                  aria-label="Needs you"
+                  className={`flex flex-col gap-[2px] ${nextUp.length ? "mb-1 border-b border-border pb-1" : ""}`}
+                >
+                  {rows(needsYou)}
+                </ul>
+              )}
+              {nextUp.length > 0 && <ul aria-label="Ready, in order" className="flex flex-col gap-[2px]">{rows(nextUp)}</ul>}
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /**
  * Roadmap: beads in columns by dependency depth, so a person can see what can
  * start now, what each item waits on, and which chain holds the project up
@@ -325,6 +453,7 @@ function DetailPanel({ node, needs, unblocks, onOpen, onClear }: {
 export function DepthMapView() {
   const { beads, projectId, selectedBeadId, selectBead, openDetail } = useApp();
   const [hideCompleted, setHideCompleted] = useHideCompleted(projectId);
+  const [railCollapsed, setRailCollapsed] = useRailCollapsed();
   const [showUnlinked, setShowUnlinked] = React.useState(false);
   const [epicChoice, setEpicChoice] = React.useState("");
   const [highlightChoice, setHighlight] = React.useState<Highlight>("all");
@@ -352,6 +481,17 @@ export function DepthMapView() {
   const trace = React.useMemo(() => (tracedId ? lineage(map, tracedId) : null), [map, tracedId]);
 
   const scroller = React.useRef<HTMLDivElement>(null);
+  const [reveal, setReveal] = React.useState<{ id: string } | null>(null);
+  const revealed = React.useRef<{ id: string } | null>(null);
+  // After the commit, because a collapsed bead has no node until it expands.
+  // Once per request: a later refresh must not pull the map back to this bead.
+  React.useLayoutEffect(() => {
+    if (!reveal || revealed.current === reveal) return;
+    const node = scroller.current?.querySelector<HTMLElement>(`[data-keyboard-bead-id="${CSS.escape(reveal.id)}"]`);
+    if (!node) return;
+    revealed.current = reveal;
+    node.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [reveal, layout]);
   const anchor = React.useRef<{ id: string; x: number; y: number } | null>(null);
   // When a refresh moves the selected node, scroll with it so it stays put on screen.
   React.useLayoutEffect(() => {
@@ -365,6 +505,15 @@ export function DepthMapView() {
   }, [layout, tracedId]);
 
   const open = React.useCallback((id: string) => openDetail(id), [openDetail]);
+  const hiddenUnlinked = React.useMemo(() => new Set(map.hiddenUnlinked), [map]);
+  const selectFromRail = React.useCallback(
+    (id: string) => {
+      if (hiddenUnlinked.has(id)) setShowUnlinked(true);
+      selectBead(id);
+      setReveal({ id });
+    },
+    [hiddenUnlinked, selectBead],
+  );
   const matches = (node: DepthMapNode) =>
     highlight === "all" ||
     (highlight === "next" ? node.state === "ready" || node.state === "doing" : node.state === "done");
@@ -442,7 +591,7 @@ export function DepthMapView() {
         )}
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
         <div
           ref={scroller}
           data-roadmap-scroller
@@ -450,7 +599,7 @@ export function DepthMapView() {
             const target = event.target as HTMLElement;
             if (!target.closest("[data-keyboard-bead-id], button")) selectBead(null);
           }}
-          className="relative min-h-0 min-w-0 flex-1 overflow-auto"
+          className="relative order-2 min-h-0 min-w-0 flex-1 overflow-auto lg:order-none"
         >
           {hasMap ? (
             <div style={{ width: layout.width, minWidth: "100%" }}>
@@ -536,15 +685,34 @@ export function DepthMapView() {
             </div>
           )}
         </div>
-        {selected && (
-          <DetailPanel
-            node={selected}
-            needs={map.edges.filter((edge) => edge.to === tracedId).map((edge) => edge.from)}
-            unblocks={map.edges.filter((edge) => edge.from === tracedId).map((edge) => edge.to)}
+        {/* One shared column beside the map, so the rail and panel can't squeeze it
+            twice. Narrow screens flatten it: rail above the map, panel below. */}
+        <div
+          className={`contents lg:flex lg:flex-shrink-0 lg:flex-col lg:border-l lg:border-border lg:bg-[var(--surface)] ${
+            railCollapsed && !selected ? "lg:w-[136px]" : "lg:w-[300px]"
+          }`}
+        >
+          <NextUpRail
+            needsYou={map.needsYou}
+            nextUp={map.nextUp}
+            hidden={hiddenUnlinked}
+            selectedId={tracedId}
+            roomy={!selected}
+            collapsed={railCollapsed}
+            onCollapse={setRailCollapsed}
+            onSelect={selectFromRail}
             onOpen={open}
-            onClear={() => selectBead(null)}
           />
-        )}
+          {selected && (
+            <DetailPanel
+              node={selected}
+              needs={map.edges.filter((edge) => edge.to === tracedId).map((edge) => edge.from)}
+              unblocks={map.edges.filter((edge) => edge.from === tracedId).map((edge) => edge.to)}
+              onOpen={open}
+              onClear={() => selectBead(null)}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

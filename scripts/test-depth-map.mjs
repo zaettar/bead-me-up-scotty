@@ -225,14 +225,42 @@ const shuffle = (list, seed) => {
   assert.equal(node(map, "finished").unblocks, 0);
 }
 
-// Unlinked beads collapse, and never hold a rank.
+// Unlinked beads collapse, but stay ranked: the numbers don't shift on expanding.
 {
-  const beads = [bead("alone"), bead("alone-done", { status: "closed" }), bead("a"), bead("b", needs("a"))];
+  const beads = [bead("alone"), bead("alone-done", { status: "closed" }), bead("a", { priority: 1 }), bead("b", needs("a"))];
   const map = buildDepthMap(beads);
   assert.deepEqual(ids(map), ["a", "b"]);
   assert.deepEqual(plain(map.hiddenUnlinked), ["alone", "alone-done"]);
   assert.equal(map.counts.ready, 2, "collapsed beads still count");
-  assert.equal(node(buildDepthMap(beads, shown), "alone").rank, 1 + 1);
+  assert.deepEqual(plain(map.nextUp.map((n) => n.bead.id)), ["a", "alone"]);
+  const expanded = buildDepthMap(beads, shown);
+  assert.equal(map.nextUp[1].rank, 2);
+  assert.equal(node(expanded, "alone").rank, 2, "rank survives expanding");
+  assert.equal(node(expanded, "a").rank, 1);
+}
+
+// The rail lists match the badges, and a project of loose beads isn't empty.
+{
+  const map = buildDepthMap([
+    bead("doing", { status: "in_progress" }),
+    bead("urgent", { priority: 0 }), bead("after-urgent", needs("urgent")),
+    bead("loose", { priority: 1 }), bead("looser", { priority: 3 }),
+    bead("waiting", needs("doing")),
+    bead("gate", { issue_type: "gate", await_type: "human", priority: 0 }),
+    bead("question", { labels: ["human"], priority: 2 }),
+    bead("blocked-question", { labels: ["human"], priority: 1, ...needs("doing") }),
+    bead("done", { status: "closed", labels: ["human"] }),
+    bead("epic", { issue_type: "epic", priority: 0 }),
+    bead("hold", { status: "deferred" }),
+  ]);
+  assert.deepEqual(plain(map.nextUp.map((n) => n.bead.id)), ["urgent", "loose", "looser"]);
+  map.nextUp.forEach((n, i) => assert.equal(n.rank, i + 1));
+  assert.deepEqual(plain(map.needsYou.map((n) => n.bead.id)), ["blocked-question", "gate", "question"], "critical path first, then priority");
+  assert.equal(map.needsYou.some((n) => n.rank), false, "needs-you items hold no rank");
+  const loose = buildDepthMap([bead("one"), bead("two", { priority: 0 })]);
+  assert.equal(loose.columns.length, 0);
+  assert.deepEqual(plain(loose.nextUp.map((n) => n.bead.id)), ["two", "one"]);
+  assert.equal(buildDepthMap([bead("doing", { status: "in_progress" })]).nextUp.length, 0);
 }
 
 // Epic scope keeps one hop of outside context, flagged as such.

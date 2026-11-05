@@ -59,6 +59,9 @@ try {
   const transforms = (page) => page.locator("[data-keyboard-bead-id]").evaluateAll((els) => els.map((el) => el.style.transform));
   const ready = (page) => page.locator("[data-roadmap-scroller] [data-keyboard-bead-id]").first().waitFor();
   const panel = (page) => page.getByRole("complementary", { name: "Selected bead" });
+  const rail = (page) => page.getByRole("region", { name: "Next up list" });
+  const railRow = (page, id) => page.locator(`[data-rail-id="${id}"]`);
+  const railIds = (page) => page.locator("[data-rail-id]").evaluateAll((els) => els.map((el) => el.dataset.railId));
   const dimmed = (page) => page.locator('[data-keyboard-bead-id][data-dim="true"]').count();
 
   // Columns, headers, states and edges.
@@ -194,6 +197,100 @@ try {
     await context.close();
   }
 
+  // Next up rail: order matches the badges, needs-you stays separate.
+  {
+    const beads = [
+      ...fixture(),
+      bead("second", { priority: 1 }), bead("second-end", { dependencies: [dep("second")] }),
+      bead("question", { labels: ["human"], priority: 1 }),
+      bead("late-loose", { priority: 4 }),
+    ];
+    const { page, state, context } = await open({ beads });
+    await ready(page);
+    await railRow(page, "next").waitFor();
+    assert.deepEqual(await railIds(page), ["question", "gate", "next", "second", "alone", "late-loose"]);
+    const ranked = await rail(page).getByRole("list", { name: "Ready, in order" }).locator("[data-rail-id]").evaluateAll((els) => els.map((el) => [el.dataset.railId, el.innerText.match(/NEXT (\d+)/)?.[1]]));
+    assert.deepEqual(ranked.map(([, n]) => n), ["1", "2", "3", "4"], "numbered without holes");
+    for (const [id, n] of ranked.slice(0, 2)) assert.match(await nodeOf(page, id).innerText(), new RegExp(`NEXT ${n}\\b`), `${id} badge matches the rail`);
+    assert.match(await rail(page).getByRole("list", { name: "Needs you" }).innerText(), /NEEDS YOU[\s\S]*NEEDS YOU/);
+    assert.match(await railRow(page, "alone").innerText(), /Unlinked/);
+
+    // Selecting traces it, and scrolls the map to it.
+    await railRow(page, "next").click();
+    await panel(page).waitFor();
+    assert.equal(await nodeOf(page, "next").getAttribute("aria-current"), "true");
+    assert.equal(await railRow(page, "next").getAttribute("aria-current"), "true");
+    assert.equal(await nodeOf(page, "gate").getAttribute("data-dim"), "true");
+
+    // A collapsed bead expands so it can be traced, keeping its number.
+    assert.equal(await nodeOf(page, "alone").count(), 0);
+    await railRow(page, "alone").click();
+    await nodeOf(page, "alone").waitFor();
+    assert.equal(await nodeOf(page, "alone").getAttribute("aria-current"), "true");
+    assert.match(await nodeOf(page, "alone").innerText(), /NEXT 3\b/);
+    const inView = await nodeOf(page, "alone").evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const area = document.querySelector("[data-roadmap-scroller]").getBoundingClientRect();
+      return box.top >= area.top && box.bottom <= area.bottom && box.left >= area.left && box.right <= area.right;
+    });
+    assert.equal(inView, true, "the map scrolls to the selected bead");
+
+    // Keyboard: rows are tab stops, J/K stay on the map, and the rail follows.
+    await railRow(page, "second").focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await nodeOf(page, "second").getAttribute("aria-current"), "true");
+    await page.keyboard.press("j");
+    const moved = await page.evaluate(() => document.activeElement?.dataset.keyboardBeadId);
+    assert.ok(moved && moved !== "second", "J moves on to the next map node");
+    assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute("data-rail-id")), false, "J never lands in the rail");
+    assert.equal(await page.locator("[data-rail-id][data-keyboard-bead-id]").count(), 0, "rail rows aren't keyboard candidates");
+    await railRow(page, "next").focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("o");
+    await page.getByRole("dialog").waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "detached" });
+    await railRow(page, "second").dblclick();
+    await page.getByRole("dialog").waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "detached" });
+
+    // A refresh doesn't drag the map back to the last revealed bead.
+    await page.evaluate(() => document.querySelector("[data-roadmap-scroller]").scrollTo(0, 0));
+    await page.evaluate(() => document.querySelector("[data-roadmap-scroller]").scrollTo(0, 60));
+    state.beads = [...beads, bead("newcomer")];
+    await railRow(page, "newcomer").waitFor();
+    assert.equal(await page.evaluate(() => document.querySelector("[data-roadmap-scroller]").scrollTop), 60, "a refresh keeps the scroll position");
+
+    // It collapses, the column gives the room back, and that is remembered.
+    await page.locator("[data-roadmap-scroller]").click({ position: { x: 500, y: 700 } });
+    await panel(page).waitFor({ state: "detached" });
+    const wide = await page.locator("[data-roadmap-scroller]").evaluate((el) => el.clientWidth);
+    await page.getByRole("button", { name: "Hide the Next up list" }).click();
+    await railRow(page, "next").waitFor({ state: "detached" });
+    assert.ok((await page.locator("[data-roadmap-scroller]").evaluate((el) => el.clientWidth)) > wide + 100, "the map gets the room");
+    await page.reload();
+    await ready(page);
+    assert.equal(await railRow(page, "next").count(), 0, "collapsed is remembered");
+    await page.getByRole("button", { name: "Show the Next up list" }).click();
+    await railRow(page, "next").waitFor();
+    assert.deepEqual(state.writes, [], "the rail never writes");
+    await context.close();
+  }
+
+  // A project of loose beads still has a next step; nothing ready says so.
+  {
+    const { page, context } = await open({ beads: [bead("one"), bead("two", { priority: 0 })] });
+    await railRow(page, "two").waitFor();
+    assert.deepEqual(await railIds(page), ["two", "one"]);
+    await railRow(page, "two").click();
+    await nodeOf(page, "two").waitFor();
+    await context.close();
+    const busy = await open({ beads: [bead("working", { status: "in_progress" }), bead("waiting", { dependencies: [dep("working")] })] });
+    await busy.page.getByText("Nothing is ready right now.").waitFor();
+    await busy.context.close();
+  }
+
   // Epic scope.
   {
     const { page, context } = await open({ beads: fixture() });
@@ -226,8 +323,12 @@ try {
       bead("b", { dependencies: [dep("a")] }),
       bead("c", { dependencies: [dep("b")] }),
       bead("d", { dependencies: [dep("c")] }),
+      bead("e", { dependencies: [dep("d")] }),
+      bead("f", { dependencies: [dep("e")] }),
+      bead("g", { dependencies: [dep("f")] }),
+      bead("h", { dependencies: [dep("g")] }),
     ];
-    const { page, state, context } = await open({ beads: chain(false), viewport: { width: 900, height: 500 } });
+    const { page, state, context } = await open({ beads: chain(false), viewport: { width: 1200, height: 500 } });
     await ready(page);
     await page.getByRole("button", { name: "Hide completed", exact: true }).click();
     const polled = () => page.waitForResponse((r) => r.url().endsWith("/api/p/demo/beads"));
@@ -244,11 +345,11 @@ try {
     }));
     assert.deepEqual(unchanged, { kept: true, top: 900, left: 180 }, "an unchanged poll is invisible");
 
-    await nodeOf(page, "c").evaluate((el) => el.scrollIntoView({ block: "center", inline: "center" }));
-    await nodeOf(page, "c").click();
+    await nodeOf(page, "e").evaluate((el) => el.scrollIntoView({ block: "center", inline: "center" }));
+    await nodeOf(page, "e").click();
     await panel(page).waitFor();
     await page.evaluate(() => new Promise((done) => requestAnimationFrame(done)));
-    const onScreen = () => nodeOf(page, "c").evaluate((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y) }; });
+    const onScreen = () => nodeOf(page, "e").evaluate((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y) }; });
     const start = await onScreen();
     const moved = await transforms(page);
     state.beads = chain(true);
@@ -258,7 +359,7 @@ try {
     assert.ok(Math.abs(end.x - start.x) <= 2 && Math.abs(end.y - start.y) <= 2, `selected node stays put: ${JSON.stringify({ start, end })}`);
     assert.equal(await nodeOf(page, "a").count(), 0);
 
-    state.beads = chain(true).filter((b) => b.id !== "c");
+    state.beads = chain(true).filter((b) => b.id !== "e");
     await panel(page).waitFor({ state: "detached" });
     assert.equal(await dimmed(page), 0, "a bead leaving the map clears its trace");
     await context.close();
@@ -291,7 +392,26 @@ try {
     assert.ok(sizes.map > sizes.shown, "the map scrolls instead");
     const bottom = await panel(page).evaluate((el) => el.getBoundingClientRect().bottom);
     assert.ok(bottom <= 780, "the panel docks inside the screen");
+    const top = (locator) => locator.evaluate((el) => el.getBoundingClientRect().top);
+    const map = page.locator("[data-roadmap-scroller]");
+    assert.ok((await top(rail(page))) < (await top(map)), "the rail stacks above the map");
+    assert.ok((await top(map)) < (await top(panel(page))), "the panel docks below the map");
+    assert.equal(await railRow(page, "next").isVisible(), false, "the rail folds to its header while the panel is open");
+    assert.ok((await map.evaluate((el) => el.clientHeight)) >= 160, "the map keeps usable height");
+    await panel(page).getByRole("button", { name: "Clear" }).click();
+    await railRow(page, "next").waitFor();
+    await railRow(page, "next").click();
+    await panel(page).waitFor();
+    assert.equal(await nodeOf(page, "next").getAttribute("aria-current"), "true");
     await context.close();
+
+    // Tablet width: the rail and panel don't squeeze the map to nothing.
+    const tablet = await open({ beads: fixture(), viewport: { width: 820, height: 1000 } });
+    await ready(tablet.page);
+    await nodeOf(tablet.page, "waiting").click();
+    await panel(tablet.page).waitFor();
+    assert.ok((await tablet.page.locator("[data-roadmap-scroller]").evaluate((el) => el.clientWidth)) >= 500, "the map keeps its width");
+    await tablet.context.close();
   }
 
   // Every theme: no errors, AA text, and states that don't rely on colour.
@@ -327,6 +447,36 @@ try {
       return [...new Set(bad)];
     });
     if (failures.length) contrast[theme] = failures;
+    // Done is green, muted, and unlike on-hold or blocked work.
+    const look = await page.evaluate(() => {
+      const channels = (value) => {
+        const numbers = value.match(/[\d.]+(?:e-?\d+)?/g).map(Number).slice(0, 3);
+        return value.startsWith("color(") ? numbers : numbers.map((n) => n / 255);
+      };
+      const fill = (id) => getComputedStyle(document.querySelector(`[data-keyboard-bead-id="${id}"]`)).backgroundColor;
+      const probe = document.createElement("div");
+      probe.style.background = "var(--surface-2)";
+      document.body.append(probe);
+      const surface = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const greenness = (value) => { const [r, g, b] = channels(value); return g - (r + b) / 2; };
+      const bar = (id) => getComputedStyle(document.querySelector(`[data-keyboard-bead-id="${id}"] > span[aria-hidden]`)).backgroundColor;
+      const [r, g, b] = channels(bar("root"));
+      return {
+        tint: greenness(fill("root")) - greenness(surface),
+        barGreen: g > r && g > b,
+        fills: new Set([fill("root"), fill("hold"), fill("waiting"), fill("next")]).size,
+        swatch: [...document.querySelectorAll("span[aria-hidden]")].some((el) => getComputedStyle(el).backgroundColor === bar("root") && !el.closest("[data-keyboard-bead-id]")),
+      };
+    });
+    assert.ok(look.tint > 0.005, `${theme} done fill is tinted green: ${look.tint}`);
+    assert.equal(look.barGreen, true, `${theme} done bar is green`);
+    assert.equal(look.fills, 4, `${theme} done, on hold, blocked and ready all differ`);
+    assert.equal(look.swatch, true, `${theme} legend and stats use the same green`);
+    assert.equal(await nodeOf(page, "root").evaluate((el) => el.style.borderStyle), "solid", "done is not dashed");
+    assert.match(await nodeOf(page, "root").innerText(), /✓ DONE/);
+    assert.equal(await nodeOf(page, "root").locator(".line-through").count(), 1, "done stays struck through");
+    assert.ok(Math.abs((await page.locator('[data-edge-id="next->root:blocks"]').evaluate((el) => Number(el.getAttribute("opacity")))) - 0.6) < 0.01, "met links are muted");
     assert.deepEqual(state.errors, [], `${theme} errors`);
     const blocked = nodeOf(page, "waiting");
     assert.equal(await blocked.evaluate((el) => el.style.borderStyle), "dashed", "blocked is dashed");

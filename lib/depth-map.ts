@@ -24,7 +24,7 @@ export interface DepthMapNode {
   bead: Bead;
   state: MapState;
   depth: number;
-  /** Position in the next-up order. Only actionable, ranked beads have one. */
+  /** Position in the next-up order, whether or not the node is collapsed. */
   rank?: number;
   /** Open beads transitively waiting on this one. */
   unblocks: number;
@@ -59,6 +59,10 @@ export interface DepthMap {
   /** Work items in scope. Epics are excluded, and so are archived beads. */
   counts: Record<MapState, number>;
   cycles: number;
+  /** Ready work in rank order, so `nextUp[n - 1]` wears the `NEXT n` badge. */
+  nextUp: DepthMapNode[];
+  /** Beads waiting on a person, most urgent first. Blocked questions still count. */
+  needsYou: DepthMapNode[];
   /** Beads with no visible depth edge, whether or not they are collapsed. */
   unlinkedCount: number;
   /** Beads collapsed out of the columns for having no visible depth edge. */
@@ -323,19 +327,21 @@ export function buildDepthMap(beads: Bead[], options: DepthMapOptions = {}): Dep
   const collapsed = new Set(hiddenUnlinked);
   const shown = [...nodes.values()].filter((node) => !collapsed.has(node.bead.id));
 
-  // Ranked only among nodes on the map, so `NEXT n` never points at a hidden bead.
-  shown
+  // Collapsed beads are ranked too: ready work with no links is still the next
+  // thing to do, and the numbers must not shift when it is expanded.
+  const urgency = (a: DepthMapNode, b: DepthMapNode) =>
+    Number(b.critical) - Number(a.critical) ||
+    a.bead.priority - b.bead.priority ||
+    b.unblocks - a.unblocks ||
+    byId(a.bead.id, b.bead.id);
+  const all = [...nodes.values()];
+  const nextUp = all
     .filter((node) => node.state === "ready" && !isEpic(node.bead) && !node.needsYou)
-    .sort(
-      (a, b) =>
-        Number(b.critical) - Number(a.critical) ||
-        a.bead.priority - b.bead.priority ||
-        b.unblocks - a.unblocks ||
-        byId(a.bead.id, b.bead.id),
-    )
-    .forEach((node, i) => {
-      node.rank = i + 1;
-    });
+    .sort(urgency);
+  nextUp.forEach((node, i) => {
+    node.rank = i + 1;
+  });
+  const needsYou = all.filter((node) => node.needsYou).sort(urgency);
 
   const columnCount = shown.reduce((count, node) => Math.max(count, node.depth + 1), 0);
   const columns: DepthMapNode[][] = Array.from({ length: columnCount }, () => []);
@@ -359,6 +365,8 @@ export function buildDepthMap(beads: Bead[], options: DepthMapOptions = {}): Dep
     longestChain,
     counts,
     cycles: components.filter((members) => members.length > 1).length,
+    nextUp,
+    needsYou,
     unlinkedCount: unlinked.length,
     hiddenUnlinked,
   };

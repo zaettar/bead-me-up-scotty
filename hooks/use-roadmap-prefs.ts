@@ -2,7 +2,6 @@
 import * as React from "react";
 
 const EVENT = "bmus.roadmap.changed";
-const keyFor = (projectId: string) => `bmus.roadmap.hideCompleted.${projectId}`;
 
 function subscribe(callback: () => void) {
   window.addEventListener(EVENT, callback);
@@ -16,30 +15,36 @@ function subscribe(callback: () => void) {
 // Kept for the session if storage is unavailable, so the toggle still works.
 const sessionValues = new Map<string, boolean>();
 
-function read(projectId: string): boolean {
-  const session = sessionValues.get(projectId);
+function read(key: string): boolean {
+  const session = sessionValues.get(key);
   if (session !== undefined) return session;
   try {
-    return globalThis.localStorage?.getItem(keyFor(projectId)) === "1";
+    return globalThis.localStorage?.getItem(key) === "1";
   } catch {
     return false;
   }
 }
 
-/** Whether Roadmap hides completed work, remembered per project in this browser. */
-export function useHideCompleted(projectId: string) {
-  const hideCompleted = React.useSyncExternalStore(subscribe, () => read(projectId), () => false);
-  const setHideCompleted = React.useCallback(
+function useStoredFlag(key: string) {
+  const value = React.useSyncExternalStore(subscribe, () => read(key), () => false);
+  const setValue = React.useCallback(
     (next: boolean) => {
       try {
-        localStorage.setItem(keyFor(projectId), next ? "1" : "0");
-        sessionValues.delete(projectId);
+        localStorage.setItem(key, next ? "1" : "0");
+        sessionValues.delete(key);
       } catch {
-        sessionValues.set(projectId, next);
+        sessionValues.set(key, next);
       }
       window.dispatchEvent(new Event(EVENT));
     },
-    [projectId],
+    [key],
   );
-  return [hideCompleted, setHideCompleted] as const;
+  return [value, setValue] as const;
 }
+
+/** Whether Roadmap hides completed work, remembered per project in this browser. */
+export const useHideCompleted = (projectId: string) =>
+  useStoredFlag(`bmus.roadmap.hideCompleted.${projectId}`);
+
+/** Whether the Next up rail is collapsed, remembered in this browser. */
+export const useRailCollapsed = () => useStoredFlag("bmus.roadmap.railCollapsed");
