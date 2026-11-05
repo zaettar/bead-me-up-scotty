@@ -15,6 +15,7 @@ import { FocusView } from "@/components/focus-view";
 import { ListView } from "@/components/list-view";
 import { EpicsView } from "@/components/epics-view";
 import { GraphView } from "@/components/graph-view";
+import { DepthMapView } from "@/components/depth-map-view";
 import { InsightsView } from "@/components/insights-view";
 import { ActivityView } from "@/components/activity-view";
 import { NeedsYouView } from "@/components/needs-you-view";
@@ -282,6 +283,7 @@ export function AppShell({ projectId }: { projectId: string }) {
               )}
               {view === "focus" && <FocusView />}
               {view === "graph" && <GraphView />}
+              {view === "roadmap" && <DepthMapView />}
               {view === "insights" && <InsightsView />}
               {view === "activity" && <ActivityView />}
               {view === "needsyou" && <NeedsYouView />}
